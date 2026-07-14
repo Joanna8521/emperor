@@ -193,6 +193,13 @@ button:focus-visible {
   border-radius: 8px;
   padding: 8px 34px;
   background: linear-gradient(180deg, rgba(165, 51, 42, 0.28), rgba(44, 26, 17, 0.6));
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+.hall-board:hover {
+  border-color: var(--gold-bright);
 }
 .hall-board h1 {
   margin: 0;
@@ -921,6 +928,168 @@ button:focus-visible {
   color: var(--gold-bright);
 }
 
+/* ─── 擇廷門面 ─────────────────────────────────────────────── */
+.gate-board.wide {
+  max-width: 900px;
+}
+.gate-title.dual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: clamp(30px, 5vw, 46px);
+}
+.gate-title.dual .slash {
+  color: var(--gold-dim);
+  font-weight: 400;
+}
+.gate-title.dual .en {
+  font-family: 'Cormorant Garamond', 'Noto Serif TC', serif;
+  letter-spacing: 0.06em;
+}
+
+.court-pick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 30px;
+}
+.court-card {
+  text-align: center;
+  border: 1.5px solid var(--gold-dim);
+  border-radius: 12px;
+  padding: 24px 20px 20px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--paper-2);
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.2s ease;
+}
+.court-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--gold-bright);
+  background: rgba(201, 154, 68, 0.08);
+}
+.court-card h2 {
+  margin: 14px 0 6px;
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  color: var(--gold-bright);
+}
+.court-card.west h2 {
+  font-family: 'Cormorant Garamond', serif;
+  letter-spacing: 0.08em;
+}
+.court-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--paper-sub);
+  min-height: 3.7em;
+}
+.court-card.west p {
+  color: #9aa8bd;
+}
+.court-go {
+  display: inline-block;
+  margin-top: 14px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 7px 22px;
+  font-size: 13.5px;
+  letter-spacing: 0.14em;
+  color: var(--gold-bright);
+}
+.court-faces {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+}
+.court-faces img {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #fdf7ec;
+  border: 1.5px solid var(--gold-dim);
+}
+.court-faces img:nth-child(2) {
+  width: 68px;
+  height: 68px;
+  border-color: var(--gold-bright);
+}
+.court-card.west .court-faces img {
+  border-color: #6d7f9c;
+}
+.court-card.west .court-faces img:nth-child(2) {
+  border-color: var(--gold-bright);
+}
+.court-crest {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+  height: 68px;
+}
+.court-crest span {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px 6px 24px 24px;
+  border: 1.5px solid #6d7f9c;
+  background: linear-gradient(180deg, #2b3547, #1b2230);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 26px;
+  color: #cfd8e6;
+}
+.court-crest .crown {
+  width: 62px;
+  height: 62px;
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  font-size: 30px;
+  background: linear-gradient(180deg, #3a3450, #241f33);
+}
+
+/* ─── 西方廷制：紋章立牌與冷色調 ───────────────────────────── */
+.plaque.heraldic .plaque-char {
+  font-family: 'Cormorant Garamond', var(--font-display), serif;
+  font-size: 34px;
+  font-weight: 700;
+}
+.hall.west .hall-board h1 {
+  font-family: 'Cormorant Garamond', serif;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  font-size: 24px;
+}
+.hall.west .card-text,
+.hall.west .feed-empty,
+.hall.west .record-body {
+  font-family: 'Cormorant Garamond', 'Noto Serif TC', serif;
+  font-size: 17px;
+  line-height: 1.85;
+}
+.hall.west .scroll-title,
+.hall.west .record-body h1,
+.hall.west .record-body h2 {
+  font-family: 'Cormorant Garamond', serif;
+}
+.hall.west .throne textarea {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 17px;
+}
+
+.throne-face {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  background: #fdf7ec;
+  flex-shrink: 0;
+}
+
 /* ─── 響應式 ───────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .hall {
@@ -983,4 +1152,10 @@ button:focus-visible {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+@media (max-width: 720px) {
+  .court-pick { grid-template-columns: 1fr; }
+  .gate-title.dual { font-size: 26px; }
+  .throne-face { display: none; }
 }

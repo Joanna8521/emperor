@@ -1,20 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  OFFICIALS, HAREM, HISTORIAN, REGENT, SPEAK_ORDER, INTERJECTORS, HAREM_FREQ, byId,
+  COURT_LIST, getCourt, rosterFor, indexFor, UI, HAREM_FREQ,
   buildTurnPrompt, buildHistorianPrompt, buildRegentPrompt,
-} from './officials'
+} from './courts'
 import { streamText, DEFAULT_MODELS } from './llm'
 import { Plaque, EdictCard, SpeechCard, FengjianCard, RecordCard, ErrorCard } from './components/ui'
 import { SettingsPanel, MusterPanel } from './components/panels'
 
-// ─── 本機存取 ───────────────────────────────────────────────
-const load = (k, fallback) => {
+const load = (k, fb) => {
   try {
     const v = localStorage.getItem(k)
-    return v ? { ...fallback, ...JSON.parse(v) } : fallback
+    return v ? { ...fb, ...JSON.parse(v) } : fb
   } catch {
-    return fallback
+    return fb
   }
 }
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v))
@@ -24,75 +23,89 @@ const defaultSettings = () => ({
   models: { ...DEFAULT_MODELS },
   defaultProvider: 'anthropic',
 })
-const defaultRoster = () =>
-  Object.fromEntries(
-    [...OFFICIALS, ...HAREM].map((o) => [o.id, { enabled: !!o.defaultOn, provider: '' }])
-  )
-const defaultProfile = () => ({ title: '', gender: 'm', birth: '', hour: '', haremFreq: 'some' })
+const defaultProfile = () => ({
+  title: '', gender: 'm', background: '',
+  divSystem: 'zodiac', birth: '', hour: '', zodiac: '',
+  haremFreq: 'some',
+})
 
-let uidSeq = 0
-const uid = () => `e${Date.now()}_${uidSeq++}`
-
-const PROVIDER_TAG = { anthropic: 'Claude', openai: 'GPT', gemini: 'Gemini' }
+let seq = 0
+const uid = () => `e${Date.now()}_${seq++}`
+const TAG = { anthropic: 'Claude', openai: 'GPT', gemini: 'Gemini' }
 
 export default function App() {
+  const [courtId, setCourtId] = useState(() => localStorage.getItem('emperor.court') || '')
+  const court = getCourt(courtId || 'east')
+  const t = UI[court.lang]
+  const idx = useMemo(() => indexFor(court), [court])
+
   const [settings, setSettings] = useState(() => load('emperor.settings', defaultSettings()))
-  const [roster, setRoster] = useState(() => load('emperor.roster', defaultRoster()))
-  const [profile, setProfile] = useState(() => load('emperor.profile', defaultProfile()))
-  const [phase, setPhase] = useState('gate')
+  const [roster, setRoster] = useState(() => load(`emperor.roster.${court.id}`, rosterFor(court)))
+  const [profile, setProfile] = useState(() => load(`emperor.profile.${court.id}`, defaultProfile()))
   const [showSettings, setShowSettings] = useState(false)
   const [showMuster, setShowMuster] = useState(false)
   const [feed, setFeed] = useState([])
   const [running, setRunning] = useState(false)
   const [speaker, setSpeaker] = useState(null)
   const [regentOut, setRegentOut] = useState(false)
-  const [edictInput, setEdictInput] = useState('')
+  const [input, setInput] = useState('')
 
-  const ctrlRef = useRef(null)
-  const modeRef = useRef('run') // run | regent | dismiss
-  const lastRecordRef = useRef('')
+  const ctrl = useRef(null)
+  const mode = useRef('run')
+  const lastRecord = useRef('')
   const feedRef = useRef(null)
 
-  const hasAnyKey = Object.values(settings.keys).some(Boolean)
+  const hasKey = Object.values(settings.keys).some(Boolean)
 
   useEffect(() => {
     const el = feedRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [feed])
 
-  // ─── 供應商解析：官員指派 → 預設 → 任一有 key 的 ─────────
-  const resolveProvider = (officialId) => {
-    let p = roster[officialId]?.provider || settings.defaultProvider
-    if (!settings.keys[p]) {
-      p = Object.keys(settings.keys).find((k) => settings.keys[k]) || p
-    }
+  const enterCourt = (id) => {
+    setCourtId(id)
+    localStorage.setItem('emperor.court', id)
+    const c = getCourt(id)
+    setRoster(load(`emperor.roster.${id}`, rosterFor(c)))
+    setProfile(load(`emperor.profile.${id}`, defaultProfile()))
+    setFeed([])
+    lastRecord.current = ''
+  }
+
+  const leaveCourt = () => {
+    if (running) return
+    setCourtId('')
+    localStorage.removeItem('emperor.court')
+    setFeed([])
+    lastRecord.current = ''
+  }
+
+  const conn = (id) => {
+    let p = roster[id]?.provider || settings.defaultProvider
+    if (!settings.keys[p]) p = Object.keys(settings.keys).find((k) => settings.keys[k]) || p
     return { provider: p, model: settings.models[p], apiKey: settings.keys[p] }
   }
 
-  // ─── 單人發言（奏對／鳳箋／實錄共用） ─────────────────────
   const speakOne = async (official, prompts, kind = 'speech') => {
     const id = uid()
-    const conn = resolveProvider(official.id)
-    const tag = `${PROVIDER_TAG[conn.provider] || conn.provider}・${conn.model}`
+    const c = conn(official.id)
+    const tag = `${TAG[c.provider] || c.provider}・${c.model}`
     setFeed((f) => [...f, { id, kind, off: official.id, text: '', done: false, tag }])
     setSpeaker(official.id)
     let acc = ''
     try {
       const maxTokens = kind === 'record' ? 1600 : 1000
-      for await (const chunk of streamText({ ...conn, ...prompts, maxTokens, signal: ctrlRef.current.signal })) {
-        acc += chunk
+      for await (const ch of streamText({ ...c, ...prompts, maxTokens, signal: ctrl.current.signal })) {
+        acc += ch
         setFeed((f) => f.map((e) => (e.id === id ? { ...e, text: acc } : e)))
       }
       setFeed((f) => f.map((e) => (e.id === id ? { ...e, done: true } : e)))
       return { ok: true, name: official.name, text: acc }
     } catch (err) {
       if (err.name === 'AbortError') {
-        setFeed((f) =>
-          f.map((e) => (e.id === id ? { ...e, done: true, text: acc || '（尚未開口，即被打斷）' } : e))
-        )
-        return { ok: false, aborted: true, name: official.name, text: acc }
+        setFeed((f) => f.map((e) => (e.id === id ? { ...e, done: true } : e)))
+        return { ok: false, name: official.name, text: acc }
       }
-      setFeed((f) => f.filter((e) => e.id !== id || acc))
       setFeed((f) => [
         ...f.map((e) => (e.id === id ? { ...e, done: true } : e)),
         { id: uid(), kind: 'error', off: official.id, text: String(err.message || err) },
@@ -101,62 +114,56 @@ export default function App() {
     }
   }
 
-  // ─── 一輪朝議 ─────────────────────────────────────────────
-  const runCourt = async (edict) => {
+  const runCourt = async (edict, { regentOnly = false } = {}) => {
     setRunning(true)
-    modeRef.current = 'run'
-    ctrlRef.current = new AbortController()
+    mode.current = regentOnly ? 'regent' : 'run'
+    ctrl.current = new AbortController()
     setFeed((f) => [...f, { id: uid(), kind: 'edict', text: edict, gender: profile.gender }])
 
     const turns = []
-    const order = SPEAK_ORDER.filter((oid) => roster[oid]?.enabled).map((oid) => byId[oid])
-
-    // 干政池：已啟用的皇后／貴妃／司禮監，每人一輪至多亂入一次
-    const freqP = HAREM_FREQ[profile.haremFreq]?.p ?? 0
-    const pool = INTERJECTORS.filter((hid) => roster[hid]?.enabled)
-    const interjected = new Set()
+    const order = court.speakOrder.filter((id) => roster[id]?.enabled).map((id) => idx[id])
+    const freqP = HAREM_FREQ[profile.haremFreq] ?? 0
+    const pool = court.interjectors.filter((id) => roster[id]?.enabled)
+    const used = new Set()
 
     const maybeInterject = async () => {
-      if (modeRef.current !== 'run' || freqP <= 0) return
-      const candidates = pool.filter((hid) => !interjected.has(hid))
-      if (!candidates.length || Math.random() >= freqP) return
-      const who = byId[candidates[Math.floor(Math.random() * candidates.length)]]
-      interjected.add(who.id)
-      const prompts = buildTurnPrompt(who, edict, turns, profile, lastRecordRef.current)
-      const r = await speakOne(who, prompts, 'fengjian')
+      if (mode.current !== 'run' || freqP <= 0) return
+      const cand = pool.filter((id) => !used.has(id))
+      if (!cand.length || Math.random() >= freqP) return
+      const who = idx[cand[Math.floor(Math.random() * cand.length)]]
+      used.add(who.id)
+      const r = await speakOne(who, buildTurnPrompt(court, who, edict, turns, profile, lastRecord.current), 'fengjian')
       if (r.text) turns.push({ name: r.name, text: r.text })
     }
+
+    const censorId = court.speakOrder[court.speakOrder.length - 1]
 
     for (const off of order) {
-      if (modeRef.current !== 'run') break
-      const prompts = buildTurnPrompt(off, edict, turns, profile, lastRecordRef.current)
-      const r = await speakOne(off, prompts)
+      if (mode.current !== 'run') break
+      const r = await speakOne(off, buildTurnPrompt(court, off, edict, turns, profile, lastRecord.current))
       if (r.text) turns.push({ name: r.name, text: r.text })
-      if (modeRef.current !== 'run') break
-      if (off.id !== 'yushi') await maybeInterject()
+      if (mode.current !== 'run') break
+      if (off.id !== censorId) await maybeInterject()
     }
 
-    // 太后垂簾聽政：御史彈劾完、史官落筆前的最後一道關卡
-    if (modeRef.current === 'run' && roster.taihou?.enabled) {
-      const taihou = byId.taihou
-      const prompts = buildTurnPrompt(taihou, edict, turns, profile, lastRecordRef.current)
-      const r = await speakOne(taihou, prompts, 'fengjian')
+    // 太后 / Queen Mother 壓軸垂簾
+    const matriarch = court.harem.find((h) => h.isMatriarch)
+    if (mode.current === 'run' && matriarch && roster[matriarch.id]?.enabled) {
+      const r = await speakOne(matriarch, buildTurnPrompt(court, matriarch, edict, turns, profile, lastRecord.current), 'fengjian')
       if (r.text) turns.push({ name: r.name, text: r.text })
     }
 
-    // 朕乏了 → 攝政王代行聖裁
-    if (modeRef.current === 'regent') {
-      ctrlRef.current = new AbortController()
+    if (mode.current === 'regent') {
+      ctrl.current = new AbortController()
       setRegentOut(true)
-      const r = await speakOne(REGENT, buildRegentPrompt(edict, turns, lastRecordRef.current))
-      if (r.text) turns.push({ name: REGENT.name, text: r.text })
+      const r = await speakOne(court.regent, buildRegentPrompt(court, edict, turns, profile, lastRecord.current))
+      if (r.text) turns.push({ name: r.name, text: r.text })
     }
 
-    // 太史令執筆實錄（只要有任何奏對）
     if (turns.length) {
-      ctrlRef.current = new AbortController()
-      const r = await speakOne(HISTORIAN, buildHistorianPrompt(edict, turns, lastRecordRef.current), 'record')
-      if (r.ok && r.text) lastRecordRef.current = r.text
+      ctrl.current = new AbortController()
+      const r = await speakOne(court.historian, buildHistorianPrompt(court, edict, turns, profile, lastRecord.current), 'record')
+      if (r.ok && r.text) lastRecord.current = r.text
     }
 
     setRunning(false)
@@ -164,137 +171,119 @@ export default function App() {
     setRegentOut(false)
   }
 
-  const submitEdict = () => {
-    const text = edictInput.trim()
+  const submit = (regentOnly = false) => {
+    const text = input.trim()
     if (!text || running) return
-    if (!hasAnyKey) {
+    if (!hasKey) {
       setShowSettings(true)
       return
     }
-    setEdictInput('')
-    runCourt(text)
+    setInput('')
+    runCourt(text, { regentOnly })
   }
 
-  const onDismiss = () => {
-    modeRef.current = 'dismiss'
-    ctrlRef.current?.abort()
-  }
-  const onRegent = () => {
-    modeRef.current = 'regent'
-    ctrlRef.current?.abort()
-  }
+  const heraldic = court.id === 'west'
+  const enabled = court.speakOrder.filter((id) => roster[id]?.enabled)
+  const left = enabled.filter((id) => ['civil', 'advisor'].includes(idx[id].faction))
+  const right = enabled.filter((id) => ['military', 'secret', 'censor'].includes(idx[id].faction))
+  const veil = court.harem.filter((h) => roster[h.id]?.enabled).map((h) => h.id)
+  const pState = (id) => (!running ? 'idle' : speaker === id ? 'speaking' : 'dim')
 
-  // ─── 站班分列：文東（左）武西（右）＋簾後 ─────────────────
-  const enabledIds = SPEAK_ORDER.filter((oid) => roster[oid]?.enabled)
-  const civil = enabledIds.filter((oid) => ['civil', 'advisor'].includes(byId[oid].faction))
-  const military = enabledIds.filter((oid) => ['military', 'secret', 'censor'].includes(byId[oid].faction))
-  const harem = HAREM.filter((h) => roster[h.id]?.enabled).map((h) => h.id)
-
-  const plaqueState = (oid) => {
-    if (!running) return 'idle'
-    if (speaker === oid) return 'speaking'
-    return 'dim'
-  }
-
-  // ─── 入殿門面 ─────────────────────────────────────────────
-  if (phase === 'gate') {
+  // ─── 擇廷門面 ─────────────────────────────────────────────
+  if (!courtId) {
     return (
       <div className="gate">
-        <motion.div
-          className="gate-board"
-          initial={{ opacity: 0, y: -24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-        >
-          <p className="gate-eyebrow">奉天承運皇帝・詔百官議事</p>
-          <h1 className="gate-title">百官朝議</h1>
-          <p className="gate-sub">
-            陛下降一道聖諭，滿朝 AI 文武輪番出列奏對：戶部算錢、兵部論戰、御史找碴、
-            東廠扮敵、後宮遞鳳箋干政，最後太史令執筆，為您留下一卷可以帶走的《起居注實錄》。
-          </p>
-          <div className="gate-cast">
-            <img src="/avatars/shoufu.png" alt="內閣首輔" />
-            <img src="/avatars/hu.png" alt="戶部尚書" />
-            <img src="/avatars/bing.png" alt="兵部尚書" />
-            <img className="big" src="/avatars/emperor_m.png" alt="皇帝" />
-            <img src="/avatars/yushi.png" alt="都察院御史" />
-            <img src="/avatars/dongchang.png" alt="東廠提督" />
-            <img src="/avatars/taihou.png" alt="太后" />
-          </div>
-          <div className="gate-actions">
-            <button
-              className="btn primary big"
-              onClick={() => (hasAnyKey ? setPhase('hall') : setShowSettings(true))}
-            >
-              {hasAnyKey ? '入殿面聖' : '呈上虎符・入殿'}
+        <motion.div className="gate-board wide" initial={{ opacity: 0, y: -24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
+          <p className="gate-eyebrow">擇一朝堂・Choose your court</p>
+          <h1 className="gate-title dual">
+            <span>百官朝議</span>
+            <span className="slash">／</span>
+            <span className="en">The Privy Council</span>
+          </h1>
+          <div className="court-pick">
+            <button className="court-card east" onClick={() => enterCourt('east')}>
+              <div className="court-faces">
+                <img src="/avatars/shoufu.png" alt="" />
+                <img src="/avatars/emperor_m.png" alt="" />
+                <img src="/avatars/yushi.png" alt="" />
+              </div>
+              <h2>明代朝堂</h2>
+              <p>中文・六部尚書、東廠錦衣衛、後宮干政、欽天監論八字</p>
+              <span className="court-go">入殿面聖</span>
+            </button>
+            <button className="court-card west" onClick={() => enterCourt('west')}>
+              <div className="court-faces">
+                <img src="/avatars/chancellor.png" alt="" />
+                <img src="/avatars/king.png" alt="" />
+                <img src="/avatars/jester.png" alt="" />
+              </div>
+              <h2>The Royal Court</h2>
+              <p>English・Privy councillors, a Spymaster, a Jester who spares no one, and an Astronomer Royal who reads your stars</p>
+              <span className="court-go">Enter the Chamber</span>
             </button>
           </div>
-          <p className="gate-foot">API key 只存於您的瀏覽器，直連各家官方 API，不經任何伺服器。</p>
+          <p className="gate-foot">{UI.zh.gateFoot}</p>
+        </motion.div>
+      </div>
+    )
+  }
+
+  // ─── 入殿（未配 key） ─────────────────────────────────────
+  if (!hasKey) {
+    return (
+      <div className="gate">
+        <motion.div className="gate-board" initial={{ opacity: 0, y: -24 }} animate={{ opacity: 1, y: 0 }}>
+          <p className="gate-eyebrow">{court.sub}</p>
+          <h1 className="gate-title">{t.gateTitle}</h1>
+          <p className="gate-sub">{t.gateSub}</p>
+          <div className="gate-actions">
+            <button className="btn primary big" onClick={() => setShowSettings(true)}>{t.gateKey}</button>
+            <button className="btn ghost" onClick={leaveCourt}>{t.switchCourt}</button>
+          </div>
+          <p className="gate-foot">{t.gateFoot}</p>
         </motion.div>
         {showSettings && (
-          <SettingsPanel
-            settings={settings}
-            onClose={() => setShowSettings(false)}
-            onSave={(d) => {
-              setSettings(d)
-              save('emperor.settings', d)
-              setShowSettings(false)
-              if (Object.values(d.keys).some(Boolean)) setPhase('hall')
-            }}
-          />
+          <SettingsPanel settings={settings} lang={court.lang} onClose={() => setShowSettings(false)}
+            onSave={(d) => { setSettings(d); save('emperor.settings', d); setShowSettings(false) }} />
         )}
       </div>
     )
   }
 
-  // ─── 金鑾殿 ───────────────────────────────────────────────
+  const rulerAvatar = court.rulerAvatars[profile.gender] || ''
+
   return (
-    <div className="hall">
+    <div className={`hall ${heraldic ? 'west' : ''}`}>
       <header className="hall-head">
-        <button className="btn ghost" onClick={() => setShowSettings(true)}>
-          虎符
+        <button className="btn ghost" onClick={() => setShowSettings(true)}>{t.settings}</button>
+        <button className="hall-board" onClick={leaveCourt} title={t.switchCourt}>
+          <h1>{t.hall}</h1>
+          <p>{profile.title ? t.hallSubTitled(profile.title) : t.hallSub}</p>
         </button>
-        <div className="hall-board">
-          <h1>金鑾殿</h1>
-          <p>{profile.title ? `${profile.title}皇帝臨朝` : '皇帝臨朝・百官侍立'}</p>
-        </div>
-        <button className="btn ghost" onClick={() => setShowMuster(true)}>
-          點將
-        </button>
+        <button className="btn ghost" onClick={() => setShowMuster(true)}>{t.muster}</button>
       </header>
 
       <section className="ban">
         <div className="ban-side">
-          {civil.map((oid) => (
-            <Plaque key={oid} official={byId[oid]} state={plaqueState(oid)} />
-          ))}
+          {left.map((id) => <Plaque key={id} official={idx[id]} state={pState(id)} heraldic={heraldic} />)}
         </div>
         <div className="ban-center">
           <AnimatePresence>
             {regentOut && (
-              <motion.div
-                key="regent"
-                initial={{ opacity: 0, y: -30, scale: 0.6 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <Plaque official={REGENT} state={speaker === REGENT.id ? 'speaking' : 'idle'} />
+              <motion.div key="regent" initial={{ opacity: 0, y: -30, scale: 0.6 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0 }}>
+                <Plaque official={court.regent} state={speaker === court.regent.id ? 'speaking' : 'idle'} heraldic={heraldic} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
         <div className="ban-side right">
-          {military.map((oid) => (
-            <Plaque key={oid} official={byId[oid]} state={plaqueState(oid)} />
-          ))}
-          <Plaque official={HISTORIAN} state={plaqueState(HISTORIAN.id)} />
-          {harem.length > 0 && (
+          {right.map((id) => <Plaque key={id} official={idx[id]} state={pState(id)} heraldic={heraldic} />)}
+          <Plaque official={court.historian} state={pState(court.historian.id)} heraldic={heraldic} />
+          {veil.length > 0 && (
             <div className="veil">
-              <span className="veil-label">簾後</span>
+              <span className="veil-label">{t.veil}</span>
               <div className="veil-row">
-                {harem.map((oid) => (
-                  <Plaque key={oid} official={byId[oid]} state={plaqueState(oid)} />
-                ))}
+                {veil.map((id) => <Plaque key={id} official={idx[id]} state={pState(id)} heraldic={heraldic} />)}
               </div>
             </div>
           )}
@@ -304,77 +293,66 @@ export default function App() {
       <main className="feed" ref={feedRef}>
         {feed.length === 0 && (
           <div className="feed-empty">
-            <p>殿上寂靜無聲。</p>
-            <p>陛下於下方龍案降一道聖諭，問一個您正在猶豫的決定、一個想法、一樁生意，眾卿即刻議政。</p>
+            <p>{t.emptyA}</p>
+            <p>{t.emptyB}</p>
           </div>
         )}
-        {feed.map((entry) => {
-          if (entry.kind === 'edict')
-            return <EdictCard key={entry.id} text={entry.text} gender={entry.gender} />
-          if (entry.kind === 'fengjian') return <FengjianCard key={entry.id} entry={entry} />
-          if (entry.kind === 'record') return <RecordCard key={entry.id} entry={entry} />
-          if (entry.kind === 'error') return <ErrorCard key={entry.id} entry={entry} />
-          return <SpeechCard key={entry.id} entry={entry} />
+        {feed.map((e) => {
+          const off = idx[e.off]
+          if (e.kind === 'edict')
+            return <EdictCard key={e.id} text={e.text} avatar={court.rulerAvatars[e.gender] || ''} label={t.edictLabel} char={court.lang === 'zh' ? '諭' : '♛'} />
+          if (e.kind === 'fengjian') return <FengjianCard key={e.id} entry={e} official={off} />
+          if (e.kind === 'record') return <RecordCard key={e.id} entry={e} t={t} char={court.historian.char} />
+          if (e.kind === 'error') return <ErrorCard key={e.id} entry={e} official={off} t={t} />
+          return (
+            <SpeechCard key={e.id} entry={e} official={off}
+              isCensor={off.faction === 'censor'} isRegent={off.id === court.regent.id} />
+          )
         })}
       </main>
 
       <footer className="throne">
+        {rulerAvatar && <img className="throne-face" src={rulerAvatar} alt="" />}
         <textarea
-          placeholder="聖諭…（例：朕欲辭去工作、全職經營自媒體，眾卿以為如何？）"
-          value={edictInput}
-          onChange={(e) => setEdictInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitEdict()
-          }}
+          placeholder={t.placeholder}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }}
           rows={2}
           disabled={running}
         />
         <div className="throne-actions">
           {running ? (
             <>
-              <button
-                className="btn regent-btn"
-                onClick={onRegent}
-                disabled={regentOut || speaker === HISTORIAN.id}
-              >
-                朕乏了
+              <button className="btn regent-btn" onClick={() => { mode.current = 'regent'; ctrl.current?.abort() }}
+                disabled={regentOut || speaker === court.historian.id}>
+                {t.lazy}
               </button>
-              <button className="btn danger" onClick={onDismiss}>
-                退朝
+              <button className="btn danger" onClick={() => { mode.current = 'dismiss'; ctrl.current?.abort() }}>
+                {t.dismiss}
               </button>
             </>
           ) : (
-            <button className="btn primary" onClick={submitEdict} disabled={!edictInput.trim()}>
-              宣眾臣議事
-            </button>
+            <>
+              <button className="btn primary" onClick={() => submit()} disabled={!input.trim()}>{t.submit}</button>
+              <button className="btn regent-btn" onClick={() => submit(true)} disabled={!input.trim()}>{t.lazy}</button>
+            </>
           )}
         </div>
       </footer>
 
       {showSettings && (
-        <SettingsPanel
-          settings={settings}
-          onClose={() => setShowSettings(false)}
-          onSave={(d) => {
-            setSettings(d)
-            save('emperor.settings', d)
-            setShowSettings(false)
-          }}
-        />
+        <SettingsPanel settings={settings} lang={court.lang} onClose={() => setShowSettings(false)}
+          onSave={(d) => { setSettings(d); save('emperor.settings', d); setShowSettings(false) }} />
       )}
       {showMuster && (
-        <MusterPanel
-          roster={roster}
-          profile={profile}
-          onClose={() => setShowMuster(false)}
+        <MusterPanel court={court} roster={roster} profile={profile} onClose={() => setShowMuster(false)}
           onSave={(r, p) => {
-            setRoster(r)
-            setProfile(p)
-            save('emperor.roster', r)
-            save('emperor.profile', p)
+            setRoster(r); setProfile(p)
+            save(`emperor.roster.${court.id}`, r)
+            save(`emperor.profile.${court.id}`, p)
             setShowMuster(false)
-          }}
-        />
+          }} />
       )}
     </div>
   )

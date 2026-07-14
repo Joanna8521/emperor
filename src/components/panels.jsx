@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { OFFICIALS, HAREM, HAREM_FREQ } from '../officials'
+import { UI, HAREM_FREQ, HOURS_ZH, ZODIAC, zodiacOf } from '../courts'
 import { PROVIDERS } from '../llm'
 
-const HOURS = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
-
-function Modal({ title, children, onClose }) {
+function Modal({ title, children, onClose, closeLabel }) {
   return (
     <AnimatePresence>
       <motion.div
@@ -24,7 +22,7 @@ function Modal({ title, children, onClose }) {
           <div className="modal-head">
             <h2>{title}</h2>
             <button className="btn ghost small" onClick={onClose}>
-              關閉
+              {closeLabel}
             </button>
           </div>
           <div className="modal-body">{children}</div>
@@ -34,8 +32,9 @@ function Modal({ title, children, onClose }) {
   )
 }
 
-// ─── 虎符：API key 與模型設定 ───────────────────────────────
-export function SettingsPanel({ settings, onSave, onClose }) {
+// ─── 虎符 / Keys ────────────────────────────────────────────
+export function SettingsPanel({ settings, lang, onSave, onClose }) {
+  const t = UI[lang]
   const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(settings)))
   const [reveal, setReveal] = useState({})
 
@@ -43,11 +42,8 @@ export function SettingsPanel({ settings, onSave, onClose }) {
   const setModel = (p, v) => setDraft((d) => ({ ...d, models: { ...d.models, [p]: v } }))
 
   return (
-    <Modal title="虎符・調兵遣將之信物" onClose={onClose}>
-      <p className="hint">
-        API key 只存在您這台裝置的瀏覽器（localStorage），直連各家官方 API，不經任何伺服器。
-        至少配一枚虎符方可上朝。
-      </p>
+    <Modal title={t.settingsTitle} onClose={onClose} closeLabel={t.close}>
+      <p className="hint">{t.settingsHint}</p>
       {Object.entries(PROVIDERS).map(([p, meta]) => (
         <div className="field-group" key={p}>
           <label className="field-label">{meta.label}</label>
@@ -59,47 +55,35 @@ export function SettingsPanel({ settings, onSave, onClose }) {
               onChange={(e) => setKey(p, e.target.value.trim())}
               autoComplete="off"
             />
-            <button
-              className="btn ghost small"
-              onClick={() => setReveal((r) => ({ ...r, [p]: !r[p] }))}
-            >
-              {reveal[p] ? '藏' : '示'}
+            <button className="btn ghost small" onClick={() => setReveal((r) => ({ ...r, [p]: !r[p] }))}>
+              {reveal[p] ? t.hide : t.show}
             </button>
           </div>
           <div className="field-row">
-            <span className="field-sub">模型</span>
-            <input
-              type="text"
-              value={draft.models[p]}
-              onChange={(e) => setModel(p, e.target.value.trim())}
-            />
+            <span className="field-sub">{t.model}</span>
+            <input type="text" value={draft.models[p]} onChange={(e) => setModel(p, e.target.value.trim())} />
           </div>
         </div>
       ))}
       <div className="field-group">
-        <label className="field-label">預設供應商（未個別指派的官員由此家出任）</label>
+        <label className="field-label">{t.defaultProvider}</label>
         <select
           value={draft.defaultProvider}
           onChange={(e) => setDraft((d) => ({ ...d, defaultProvider: e.target.value }))}
         >
           {Object.entries(PROVIDERS).map(([p, meta]) => (
-            <option key={p} value={p}>
-              {meta.label}
-            </option>
+            <option key={p} value={p}>{meta.label}</option>
           ))}
         </select>
       </div>
       <div className="modal-actions">
-        <button className="btn primary" onClick={() => onSave(draft)}>
-          收訖虎符
-        </button>
+        <button className="btn primary" onClick={() => onSave(draft)}>{t.saveKeys}</button>
       </div>
     </Modal>
   )
 }
 
-// ─── 點將列 ─────────────────────────────────────────────────
-function MusterRow({ official, row, onToggle, onProv }) {
+function MusterRow({ official, row, t, onToggle, onProv }) {
   return (
     <div className={`muster-row ${row?.enabled ? 'on' : ''}`}>
       <label className="muster-main">
@@ -112,131 +96,116 @@ function MusterRow({ official, row, onToggle, onProv }) {
         <span className="muster-name">{official.name}</span>
         <span className="muster-modern">{official.modern}</span>
       </label>
-      <select
-        value={row?.provider || ''}
-        onChange={(e) => onProv(e.target.value)}
-        title="由哪家模型出任"
-      >
-        <option value="">依預設</option>
+      <select value={row?.provider || ''} onChange={(e) => onProv(e.target.value)} title={t.provTip}>
+        <option value="">{t.provDefault}</option>
         {Object.entries(PROVIDERS).map(([p, meta]) => (
-          <option key={p} value={p}>
-            {meta.label}
-          </option>
+          <option key={p} value={p}>{meta.label}</option>
         ))}
       </select>
     </div>
   )
 }
 
-// ─── 點將：官員陣容、後宮干政與皇帝資料 ─────────────────────
-export function MusterPanel({ roster, profile, onSave, onClose }) {
+// ─── 點將 / Summon ──────────────────────────────────────────
+export function MusterPanel({ court, roster, profile, onSave, onClose }) {
+  const t = UI[court.lang]
   const [rDraft, setRDraft] = useState(() => JSON.parse(JSON.stringify(roster)))
   const [pDraft, setPDraft] = useState(() => ({ ...profile }))
 
-  const toggle = (id) =>
-    setRDraft((r) => ({ ...r, [id]: { ...r[id], enabled: !r[id]?.enabled } }))
-  const setProv = (id, v) =>
-    setRDraft((r) => ({ ...r, [id]: { ...r[id], provider: v } }))
+  const toggle = (id) => setRDraft((r) => ({ ...r, [id]: { ...r[id], enabled: !r[id]?.enabled } }))
+  const setProv = (id, v) => setRDraft((r) => ({ ...r, [id]: { ...r[id], provider: v } }))
+  const setP = (k, v) => setPDraft((p) => ({ ...p, [k]: v }))
 
-  const courtCount = OFFICIALS.filter((o) => rDraft[o.id]?.enabled).length
-  const haremCount = HAREM.filter((h) => rDraft[h.id]?.enabled).length
+  const courtCount = court.officials.filter((o) => rDraft[o.id]?.enabled).length
+  const haremCount = court.harem.filter((h) => rDraft[h.id]?.enabled).length
+  const sys = pDraft.divSystem || 'zodiac'
+  const auto = zodiacOf(pDraft.birth)
 
   return (
-    <Modal title="點將・今日誰上殿" onClose={onClose}>
-      <p className="hint">
-        每多一位官員或后妃發言，就多一次 API 呼叫。太史令必到（負責實錄），不在此列。
-        目前朝班 {courtCount} 位、簾後 {haremCount} 位。
-      </p>
+    <Modal title={t.musterTitle} onClose={onClose} closeLabel={t.close}>
+      <p className="hint">{t.musterHint(courtCount, haremCount)}</p>
 
-      <h3 className="muster-section">朝班</h3>
+      <h3 className="muster-section">{t.sectionCourt}</h3>
       <div className="muster-list">
-        {OFFICIALS.map((o) => (
-          <MusterRow
-            key={o.id}
-            official={o}
-            row={rDraft[o.id]}
-            onToggle={() => toggle(o.id)}
-            onProv={(v) => setProv(o.id, v)}
-          />
+        {court.officials.map((o) => (
+          <MusterRow key={o.id} official={o} row={rDraft[o.id]} t={t}
+            onToggle={() => toggle(o.id)} onProv={(v) => setProv(o.id, v)} />
         ))}
       </div>
 
-      <h3 className="muster-section harem">簾後（後宮干政）</h3>
-      <p className="hint">
-        祖訓有云「後宮不得干政」，但祖訓就是拿來破的。皇后、貴妃與司禮監會在議政中途隨機遞鳳箋亂入；
-        太后開啟即為「垂簾聽政」，固定在御史彈劾完、史官落筆前壓軸出場。
-      </p>
+      <h3 className="muster-section harem">{t.sectionHarem}</h3>
+      <p className="hint">{t.haremHint}</p>
       <div className="muster-list">
-        {HAREM.map((h) => (
-          <MusterRow
-            key={h.id}
-            official={h}
-            row={rDraft[h.id]}
-            onToggle={() => toggle(h.id)}
-            onProv={(v) => setProv(h.id, v)}
-          />
+        {court.harem.map((h) => (
+          <MusterRow key={h.id} official={h} row={rDraft[h.id]} t={t}
+            onToggle={() => toggle(h.id)} onProv={(v) => setProv(h.id, v)} />
         ))}
       </div>
       <div className="field-group">
-        <label className="field-label">干政頻率（皇后／貴妃／司禮監亂入的機率）</label>
+        <label className="field-label">{t.freqLabel}</label>
         <div className="freq-pills">
-          {Object.entries(HAREM_FREQ).map(([k, meta]) => (
-            <button
-              key={k}
-              className={`freq-pill ${pDraft.haremFreq === k ? 'on' : ''}`}
-              onClick={() => setPDraft((p) => ({ ...p, haremFreq: k }))}
-            >
-              {meta.label}
+          {Object.keys(HAREM_FREQ).map((k) => (
+            <button key={k} className={`freq-pill ${pDraft.haremFreq === k ? 'on' : ''}`}
+              onClick={() => setP('haremFreq', k)}>
+              {t.freq[k]}
             </button>
           ))}
         </div>
       </div>
 
-      <h3 className="muster-section">御前</h3>
+      <h3 className="muster-section">{t.sectionRuler}</h3>
       <div className="field-group">
-        <label className="field-label">聖上真容</label>
+        <label className="field-label">{t.rulerFace}</label>
         <div className="field-row">
-          <select
-            value={pDraft.gender || 'm'}
-            onChange={(e) => setPDraft((p) => ({ ...p, gender: e.target.value }))}
-          >
-            <option value="m">皇帝（男）</option>
-            <option value="f">皇帝（女）</option>
+          <select value={pDraft.gender || 'm'} onChange={(e) => setP('gender', e.target.value)}>
+            <option value="m">{t.rulerM}</option>
+            <option value="f">{t.rulerF}</option>
           </select>
-          <input
-            type="text"
-            placeholder="聖號（稱呼，可留白），例：永樂"
-            value={pDraft.title || ''}
-            onChange={(e) => setPDraft((p) => ({ ...p, title: e.target.value }))}
-          />
+          <input type="text" placeholder={t.rulerName} value={pDraft.title || ''}
+            onChange={(e) => setP('title', e.target.value)} />
         </div>
       </div>
       <div className="field-group">
-        <label className="field-label">陛下生辰（供欽天監推演八字，僅娛樂，可留白）</label>
-        <div className="field-row">
-          <input
-            type="date"
-            value={pDraft.birth || ''}
-            onChange={(e) => setPDraft((p) => ({ ...p, birth: e.target.value }))}
-          />
-          <select
-            value={pDraft.hour || ''}
-            onChange={(e) => setPDraft((p) => ({ ...p, hour: e.target.value }))}
-          >
-            <option value="">時辰不詳</option>
-            {HOURS.map((h) => (
-              <option key={h} value={h}>
-                {h}時
+        <label className="field-label">{t.rulerBg}</label>
+        <textarea rows={2} placeholder={t.rulerBgPh} value={pDraft.background || ''}
+          onChange={(e) => setP('background', e.target.value)} />
+      </div>
+
+      <div className="field-group">
+        <label className="field-label">{t.divTitle}</label>
+        <div className="freq-pills">
+          <button className={`freq-pill ${sys === 'zodiac' ? 'on' : ''}`} onClick={() => setP('divSystem', 'zodiac')}>
+            {t.divZodiac}
+          </button>
+          <button className={`freq-pill ${sys === 'bazi' ? 'on' : ''}`} onClick={() => setP('divSystem', 'bazi')}>
+            {t.divBazi}
+          </button>
+        </div>
+        <div className="field-row" style={{ marginTop: 10 }}>
+          <input type="date" value={pDraft.birth || ''} onChange={(e) => setP('birth', e.target.value)} />
+          {sys === 'bazi' ? (
+            <select value={pDraft.hour || ''} onChange={(e) => setP('hour', e.target.value)}>
+              <option value="">{t.hourUnknown}</option>
+              {HOURS_ZH.map((h) => (
+                <option key={h} value={h}>{h}時</option>
+              ))}
+            </select>
+          ) : (
+            <select value={pDraft.zodiac || ''} onChange={(e) => setP('zodiac', e.target.value)}>
+              <option value="">
+                {auto ? `${court.lang === 'zh' ? auto.zh : auto.en}${court.lang === 'zh' ? '（自動）' : ' (auto)'}` : t.zodiacPick}
               </option>
-            ))}
-          </select>
+              {ZODIAC.map((z) => (
+                <option key={z.id} value={z.id}>{court.lang === 'zh' ? z.zh : z.en}</option>
+              ))}
+            </select>
+          )}
         </div>
-        <p className="field-sub">欽天監所言僅供娛樂參詳，切勿據以決斷大事。</p>
+        <p className="field-sub">{t.divFoot}</p>
       </div>
+
       <div className="modal-actions">
-        <button className="btn primary" onClick={() => onSave(rDraft, pDraft)}>
-          點將完畢
-        </button>
+        <button className="btn primary" onClick={() => onSave(rDraft, pDraft)}>{t.saveMuster}</button>
       </div>
     </Modal>
   )

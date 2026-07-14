@@ -1,52 +1,51 @@
-# 百官朝議・金鑾殿 🏛️
+# The Privy Council ／ 百官朝議 🏛️
 
-使用者當皇帝，滿朝 AI 文武百官輪番議政的多模型（Multi-LLM）網頁。
+**You are the sovereign. An entire AI court argues your decision out in front of you, then the chronicler writes it down.**
 
-降一道聖諭，內閣首輔開場定調、六部尚書各就本職奏對、東廠模擬敵人攻勢、錦衣衛佈防、
-御史專門找碴彈劾，最後太史令執筆，寫成一卷可以複製帶走的《起居注實錄》。
-累了就按「朕乏了」，攝政王出場代行聖裁。
+Ask one question. The counsellors rise one by one, each locked to a single perspective, and they argue with each other rather than politely agreeing with you. Two courts are available, each in its own language.
 
-## 特色
+**The Royal Court (English).** A Tudor-style privy council. The Lord High Treasurer counts the coin and punctures your arithmetic. The Earl Marshal names the enemy. The Spymaster, in the mould of Walsingham, plays the adversary and tells you exactly where you would be struck. The Court Jester is the only soul in the realm licensed to tell you the truth and keep his head, so he mocks every counsellor by name. The Astronomer Royal reads your stars, strictly for amusement. From behind the arras, the Queen Mother rules, the Royal Favourite flatters, and the Lord Privy Seal quietly filters out everything you would rather not hear. At the last, the Royal Chronicler takes up the pen.
 
-- **十二位官員＋史官＋攝政王彩蛋**，每位都有獨立人設、Q 版立繪與現代商業職能映射（CEO、CFO、CTO、紅隊……）
-- **後宮干政系統**：太后垂簾聽政（御史彈劾完、史官落筆前壓軸把關）；皇后、貴妃、司禮監掌印太監會在議政中途隨機遞鳳箋亂入，干政頻率可調（從不／偶爾／頻繁）；史官實錄增設「後宮風聞」章節，御史見後宮干政必彈劾
-- **三家模型混編**：Anthropic（Claude）、OpenAI（GPT）、Google（Gemini），可全域預設，也可在「點將」為每位官員個別指派
-- **串流輸出＋出列動畫**：發言官員的立牌會向前一步、金光加身，其他官員退入陰影
-- **欽天監八字推演**（純娛樂）：在「點將」輸入生辰，欽天監正會用命理口吻包裝趨勢分析
-- **API key 只存瀏覽器 localStorage**，直連各家官方 API，不經任何伺服器
+**明代朝堂（中文）.** A Ming dynasty imperial court. 內閣首輔開場定調、六部尚書各就本職奏對、東廠模擬敵人攻勢、錦衣衛佈防、都察院御史專門找碴彈劾。簾後太后垂簾聽政、貴妃講盡好話、司禮監掌印太監報喜不報憂。最後太史令執筆，寫成一卷可以帶走的《起居注實錄》。
 
-## 本機開發
+Too tired to hold court? Press **"I am weary"** ／「朕乏了」and the Lord Protector rules in your stead.
+
+## Features
+
+- **Two courts, seventeen roles each.** Every office has its own persona and maps to a modern business function (CEO, CFO, CTO, red team, devil's advocate). The whole interface, including every word the court speaks, follows the court you choose.
+- **Meddling from behind the arras.** The Queen Mother speaks last, after the Jester and before the Chronicler, and gives or withholds her blessing. The Consort, the Favourite and the Privy Seal slip notes into the chamber at unpredictable moments. How often they meddle is up to you. The censor (Jester ／ 御史) denounces them for it every single time.
+- **Two systems of divination.** The Astronomer Royal ／ 欽天監正 reads either the Western zodiac or Chinese Bazi. Your sign is inferred from your date of birth. This is a joke and is labelled as one.
+- **Tell the court who you are.** Your regnal name, your likeness, and who you are in the mortal world: your trade, your domain, what weighs on you. Every counsellor takes it into account. Fill this in. It makes the advice dramatically more specific.
+- **Mix models freely.** Anthropic (Claude), OpenAI (GPT) and Google (Gemini). Set a default, or cast each role with a different model. Give the sharpest models to the offices that need judgement (Chancellor, Jester, Queen Mother, Chronicler) and let a cheap model play the Favourite, who only ever has to agree with you.
+- **Streaming, with staging.** The speaking counsellor steps forward, grows, and catches the light. The rest recede into shadow. The Chronicle unrolls as a scroll.
+- **Your API key never leaves your browser.** It lives in localStorage and goes straight to each provider. There is no server. There is nothing to trust us with.
+
+## Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-## 部署到 Vercel（GitHub 連動）
+## Deploy on Vercel
 
-1. 把程式碼推上 GitHub：
+1. Push to GitHub.
+2. On [vercel.com](https://vercel.com), choose **Add New → Project** and import the repository.
+3. Vercel detects Vite on its own (build `vite build`, output `dist`). Press **Deploy**.
+4. Every push after that redeploys itself.
 
-   ```bash
-   git add -A
-   git commit -m "feat: 百官朝議 v1"
-   git push origin main
-   ```
+## Cost
 
-2. 到 [vercel.com](https://vercel.com) → **Add New → Project** → 匯入這個 GitHub repo。
-3. Vercel 會自動偵測為 Vite 專案（Build Command：`vite build`、Output：`dist`），直接按 **Deploy**。
-4. 之後每次 `git push`，Vercel 都會自動重新部署。
+Every counsellor who speaks is one API call. The default cast is four counsellors plus the Chronicler, so five calls per session. A full court, all seventeen roles with constant meddling, runs closer to twenty. Adjust the cast under **Summon** ／「點將」.
 
-## 費用與安全
+## Adding a court or a role
 
-- 每位上殿的官員＝一次 API 呼叫。預設點六位（含史官七次呼叫），可在「點將」增減。
-- API key 僅儲存於使用者自己的瀏覽器，本專案沒有後端、不收集任何資料。
-- 請勿在公用電腦上留下 key；可隨時到「虎符」清空。
+Each court is one self-contained file: [`src/courts/west.js`](src/courts/west.js) and [`src/courts/east.js`](src/courts/east.js). Interface strings and prompt assembly live in [`src/courts/index.js`](src/courts/index.js).
 
-## 自訂官員
+To add a counsellor, copy an existing entry, write the persona, and add the id to that court's `speakOrder`. To add a whole new court (a Roman senate, a Norse thing, a corporate board), write one more file in `src/courts/` and register it in the index. The chooser screen picks it up by itself.
 
-所有官員的人設、發言順序與提示詞都在 [`src/officials.js`](src/officials.js)，
-想加新官職（例如司禮監掌印太監）只要照格式新增一筆即可。
+Portraits live in `public/avatars/`.
 
-## 授權
+## Licence
 
 MIT
